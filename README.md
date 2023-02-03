@@ -1,5 +1,6 @@
-// @generated automatically by Diesel CLI.
+> schema should be like this 
 
+```rs
 diesel::table! {
     books (id) {
         id -> Integer,
@@ -8,3 +9,4 @@ diesel::table! {
         published -> Bool,
     }
 }
+```
