@@ -1,13 +1,13 @@
 #![allow(unused)]
 
+mod schema;
+mod models;
+
 use diesel::mysql::MysqlConnection;
 use diesel::prelude::*;
 
 use dotenv::dotenv;
 use std::env;
-
-mod schema;
-mod models;
 
 use crate::models::{ Book, BookData };
 
