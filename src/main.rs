@@ -1,145 +1,45 @@
-#![allow(unused)]
+#![feature(plugin, custom_derive, const_fn, decl_macro, custom_attribute, proc_macro_hygiene)]
+#![allow(proc_macro_derive_resolution_fallback, unused_attributes)]
 
-mod schema;
-mod models;
+#[macro_use]
+extern crate diesel;
 
-use diesel::mysql::MysqlConnection;
-use diesel::prelude::*;
+extern crate dotenv;
+extern crate r2d2;
+extern crate r2d2_diesel;
+#[macro_use]
+extern crate rocket;
+#[macro_use]
+extern crate serde_derive;
+#[macro_use]
+extern crate serde_json;
 
 use dotenv::dotenv;
 use std::env;
+use routes::*;
 
-use crate::models::{ Book, BookData };
+mod db;
+mod models;
+mod schema;
+mod routes;
+mod static_files;
 
-fn establish_connection() -> MysqlConnection {
+fn rocket() -> rocket::Rocket {
     dotenv().ok();
 
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let database_url = env::var("DATABASE_URL").expect("set DATABASE_URL");
 
-    MysqlConnection::establish(&database_url)
-        .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
+    let pool = db::init_pool(database_url);
+
+    rocket::ignite()
+        .manage(pool)
+        .mount(
+            "/api/v1/",
+            routes![index, new, show, delete, author, update],
+        )
+        .mount("/", routes![static_files::all, static_files::index])
 }
 
 fn main() {
-    let connection = &mut establish_connection();
-
-    let new_title = "new book title";
-    let new_author = "new book author";
-    let new_published = false;
-
-    for i in 1..11 {
-        let title = format!("title {i}");
-        let author = format!("author {i}");
-        let published = i < 5;
-
-        let book = BookData {
-            title: &title,
-            author: &author,
-            published,
-        };
-
-        if insert(&book, connection) {
-            println!("Success");
-        } else {
-            println!("Failed");
-        }
-    }
-
-    println!("{:#?}", all(connection, 5));
-
-    println!("Book [ID:2] {:#?}", show(2, connection));
-
-    println!("Updating book [ID:1]");
-
-    update_by_id(1, connection, BookData { 
-        author: &new_author,
-        title: &new_title,
-        published: new_published,
-    });
-
-    println!("Book [ID:1] {:#?}", show(1, connection));
-
-    if delete_by_id(4, connection) {
-        println!("Success Post ID:4 deleted");
-    } else {
-        println!("Failed to drop post ID:4");
-    }
-
-    println!("All posts: {:#?}", all(connection, 10));
-
-    let author = "author 3";
-    println!("All posts with author <{}>: {:#?}", author, all_by_author(String::from(author), connection));
-}
-
-// ------------------------------------------------------------------------------------------------------------------------------------------
-
-fn insert(book: &BookData, connection: &mut MysqlConnection) -> bool {
-    use schema::books::dsl::books;
-
-    diesel::insert_into(books)
-        .values(book)
-        .execute(connection)
-        .is_ok()
-}
-
-fn all(connection: &mut MysqlConnection, limit: u8) -> Vec<Book> {
-    use schema::books::dsl::{books, id};
-
-    books
-        .order(id.desc())
-        .limit(limit as i64)
-        .load::<Book>(connection)
-        .expect("Error loading books")
-}
-
-
-pub fn show(id: i32, connection: &mut MysqlConnection) -> Vec<Book> {
-    use schema::books::dsl::books;
-
-    books
-        .find(id)
-        .load::<Book>(connection)
-        .expect("Error loading book")
-}
-
-fn update_by_id(id: i32, connection: &mut MysqlConnection, book: BookData) -> bool {
-    use schema::books::dsl::{ author as a, published as p, title as t, books };
-
-    let BookData {
-        title,
-        author,
-        published,
-    } = book;
-
-    let _book = books.find(id);
-
-    diesel::update(_book)
-        .set((a.eq(author), p.eq(published), t.eq(title)))
-        .execute(connection)
-        .unwrap();
-
-    true
-}
-
-fn delete_by_id(id: i32, connection: &mut MysqlConnection) -> bool {
-    use schema::books::dsl::books;
-
-    if show(id, connection).is_empty() {
-        return false;
-    }
-
-    let source = books.find(id);
-
-    diesel::delete(source)
-        .execute(connection)
-        .is_ok()
-}
-
-fn all_by_author(author: String, connection: &mut MysqlConnection) -> Vec<Book> {
-    use schema::books::dsl::{books, author as a};
-
-    books
-        .filter(a.eq(author))
-        .load::<Book>(connection)
-        .expect("Failed loading books")
+    rocket().launch();
 }
